@@ -10,8 +10,9 @@ pipeline {
     stage('Build & Unit tests') {
       agent { docker { image 'node:22'; reuseNode true } }
       steps {
-        sh 'npm install'          
-        sh 'npm run test:server'  
+        sh 'rm -rf node_modules frontend/node_modules'   // repart d'une installation propre
+        sh 'npm install --no-audit --no-fund'
+        sh 'npm run test:server'
       }
     }
     stage('Docker build') {
