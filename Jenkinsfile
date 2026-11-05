@@ -29,7 +29,7 @@ pipeline {
       steps {
         sh '''
           docker rm -f juice-shop-staging || true
-          docker run -d --name juice-shop-staging -p 3000:3000 $IMAGE
+          docker run -d --name juice-shop-staging -p 3001:3000 $IMAGE
         '''
       }
     }
