@@ -71,3 +71,9 @@ config/*.yml
 # Misc
 .playwright-mcp/
 cypress/screenshots/
+
+.trivycache/
+.sonar/
+
+.trivycache/
+.sonar/

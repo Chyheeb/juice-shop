@@ -69,6 +69,30 @@ pipeline {
         sh 'npm run test:server'
       }
     }
+    stage('SCA - Trivy') {
+      agent {
+        docker {
+          image 'aquasec/trivy:latest'
+          args '--entrypoint=""'
+          reuseNode true
+        }
+      }
+      steps {
+        sh '''
+          export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
+          # 1. Rapport complet, toutes sévérités (non bloquant, pour l'historique)
+          trivy rootfs --scanners vuln --format json -o trivy-sca-report.json .
+          # 2. Contrôle bloquant : HIGH/CRITICAL hors baseline
+          trivy rootfs --scanners vuln --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore --skip-db-update --skip-java-db-update --exit-code 1 .
+        '''
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'trivy-sca-report.json', allowEmptyArchive: true
+        }
+      }
+    }
     stage('Docker build') {
       steps { sh 'docker build --progress=plain -t $IMAGE .' }
     }
