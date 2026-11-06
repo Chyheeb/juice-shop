@@ -3,6 +3,6 @@
 # Auteur    : Chiheb Medini
 # Raison    : token factice généré pour la démonstration du blocage CI (build #8)
 # Action    : aucun secret réel exposé — si réel : révocation immédiate du token
-<"26307ca8043837c3631a12ad4ec33bd54817efbe:leak-demo.js:github-pat:1">
+26307ca8043837c3631a12ad4ec33bd54817efbe:leak-demo.js:github-pat:1
 
 
