@@ -15,3 +15,10 @@ repos:
       - id: check-added-large-files     # fichiers volumineux (> 500 Ko)
         args: ['--maxkb=500']
       - id: check-merge-conflict        # marqueurs de conflit oubliés
+  # SAST : analyse statique des fichiers modifiés (JS/TS)
+  - repo: https://github.com/semgrep/pre-commit
+    rev: v1.184.0
+    hooks:
+      - id: semgrep
+        args: ['--config', 'p/javascript', '--config', 'p/typescript',
+               '--error', '--skip-unknown-extensions', '--metrics', 'off']
