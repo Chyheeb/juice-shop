@@ -1,3 +1,5 @@
+
+
 pipeline {
   agent any
   options { 
@@ -16,25 +18,24 @@ pipeline {
       agent { docker { image 'node:22'; reuseNode true } }
       steps {
         sh 'rm -rf node_modules frontend/node_modules'
-        // 1. dépendances backend, sans lancer le postinstall imbriqué
         sh 'npm install --no-audit --no-fund --ignore-scripts'
-        // 2. dépendances frontend, installées séparément
         sh 'cd frontend && npm install --no-audit --no-fund --legacy-peer-deps'
-        // 3. build
         sh 'npm run build:frontend'
         sh 'npm run build:server'
-        // 4. tests unitaires
         sh 'npm run test:server'
       }
     }
     stage('Docker build') {
-      steps { sh 'docker build -t $IMAGE .' }
+      steps { sh 'docker build --progress=plain -t $IMAGE .' }
     }
     stage('Deploy (staging)') {
       steps {
         sh '''
           docker rm -f juice-shop-staging || true
           docker run -d --name juice-shop-staging -p 3001:3000 $IMAGE
+          # garder seulement les 3 dernières images juice-shop
+          docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 | xargs -r -I{} docker rmi juice-shop:{} || true
+          docker image prune -f
         '''
       }
     }
