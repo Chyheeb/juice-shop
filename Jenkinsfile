@@ -12,6 +12,29 @@ pipeline {
     stage('Checkout') {
       steps { checkout scm }
     }
+    stage('Secrets scan') {
+      agent {
+        docker {
+          image 'zricethezav/gitleaks:v8.21.2'
+          args '--entrypoint=""'
+          reuseNode true
+        }
+      }
+      steps {
+        sh '''
+          gitleaks git . \
+            --baseline-path .gitleaks-baseline.json \
+            --redact \
+            --report-format json --report-path gitleaks-report.json \
+            --exit-code 1
+        '''
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'gitleaks-report.json', allowEmptyArchive: true
+        }
+      }
+    }
     stage('Build & Unit tests') {
       agent { docker { image 'node:22'; reuseNode true } }
       steps {
