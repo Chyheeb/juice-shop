@@ -1,0 +1,17 @@
+# Contrôles shift-left exécutés sur le poste du développeur, avant chaque commit.
+# Ils ne s'appliquent qu'aux fichiers modifiés (approche "new code").
+repos:
+  # Détection de secrets (tokens, clés API, mots de passe)
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # Contrôles génériques
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key          # clés privées (RSA, SSH...)
+      - id: check-added-large-files     # fichiers volumineux (> 500 Ko)
+        args: ['--maxkb=500']
+      - id: check-merge-conflict        # marqueurs de conflit oubliés
