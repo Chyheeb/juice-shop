@@ -35,6 +35,29 @@ pipeline {
         }
       }
     }
+    stage('SAST - SonarQube') {
+      agent {
+        docker {
+          image 'sonarsource/sonar-scanner-cli:latest'
+          args '--network devsecops --entrypoint=""'
+          reuseNode true
+        }
+      }
+      steps {
+        withSonarQubeEnv('SonarQube') {
+          // le token vient du credential Jenkins, jamais écrit en clair
+          sh 'SONAR_TOKEN="$SONAR_AUTH_TOKEN" SONAR_USER_HOME="$WORKSPACE/.sonar" sonar-scanner'
+        }
+      }
+    }
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          // attend le verdict de SonarQube (via le webhook) et bloque si ERROR
+          waitForQualityGate abortPipeline: true
+        }
+      }
+    }
     stage('Build & Unit tests') {
       agent { docker { image 'node:22'; reuseNode true } }
       steps {
