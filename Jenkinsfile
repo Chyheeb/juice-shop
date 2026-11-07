@@ -1,4 +1,7 @@
 pipeline {
+  // Images des outils épinglées par digest (sha256) : build reproductible et protection supply chain.
+  // Mise à jour volontaire et contrôlée (en entreprise : Renovate/Dependabot).
+  // Exception : l'image de base de l'application est récupérée avec --pull pour intégrer les correctifs OS.
   agent any
   options { 
     disableConcurrentBuilds()
@@ -19,7 +22,7 @@ pipeline {
     stage('Secrets scan') {
       agent {
         docker {
-          image 'zricethezav/gitleaks:v8.21.2'
+          image 'zricethezav/gitleaks@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46'
           args '--entrypoint=""'
           reuseNode true
         }
@@ -42,7 +45,7 @@ pipeline {
     stage('SAST - SonarQube') {
       agent {
         docker {
-          image 'sonarsource/sonar-scanner-cli:latest'
+          image 'sonarsource/sonar-scanner-cli@sha256:38207bba3d98c8ce6f6c051ea2b9f05a24480da78c9ee5945ceafc3d9de02b88'
           args '--network devsecops --entrypoint=""'
           reuseNode true
         }
@@ -63,7 +66,7 @@ pipeline {
       }
     }
     stage('Build & Unit tests') {
-      agent { docker { image 'node:22'; reuseNode true } }
+      agent { docker { image 'node@sha256:e273cf2a19c7334c03f52e2ca933ecdfc3fbfaad49db7b8bc8c3edd9ac34e9c7'; reuseNode true } }
       steps {
         sh 'rm -rf node_modules frontend/node_modules'
         sh 'npm install --no-audit --no-fund --ignore-scripts'
@@ -72,11 +75,16 @@ pipeline {
         sh 'npm run build:server'
         sh 'npm run test:server'
       }
+      post {
+        always {
+          archiveArtifacts artifacts: 'frontend/dist/bom/bom.json', allowEmptyArchive: true
+        }
+      }
     }
     stage('SCA - Trivy') {
       agent {
         docker {
-          image 'aquasec/trivy:latest'
+          image 'aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb'
           args '--entrypoint=""'
           reuseNode true
         }
@@ -110,7 +118,7 @@ pipeline {
         // export de l'image : Trivy n'a jamais accès au socket Docker
         sh 'docker save $IMAGE -o image.tar'
         script {
-          docker.image('aquasec/trivy:latest').inside('--entrypoint=""') {
+          docker.image('aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb').inside('--entrypoint=""') {
             sh '''
               export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
               COMMON="--input image.tar --scanners vuln --timeout 20m --no-progress"
@@ -149,7 +157,7 @@ pipeline {
       steps {
         sh 'sleep 20'   // démarrage de Juice Shop
         script {
-          docker.image('ghcr.io/zaproxy/zaproxy:stable').inside('--network devsecops --entrypoint=""') {
+          docker.image('ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af').inside('--network devsecops --entrypoint=""') {
             sh '''
               mkdir -p /zap/wrk
               cp "$WORKSPACE/zap-rules.conf" /zap/wrk/
