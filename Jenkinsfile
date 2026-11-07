@@ -10,7 +10,11 @@ pipeline {
   }
   stages {
     stage('Checkout') {
-      steps { checkout scm }
+      steps { 
+        checkout scm
+        // supprime les rapports des builds précédents (on garde les caches .sonar et .trivycache)
+        sh 'rm -f gitleaks-report.json trivy-sca-report.json trivy-image-report.json zap-report.html zap-report.json image.tar'
+      }
     }
     stage('Secrets scan') {
       agent {
