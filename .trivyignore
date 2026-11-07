@@ -81,3 +81,12 @@ NSWG-ECO-428
 CVE-2024-41909
 # HIGH com.google.guava:guava@33.7.1-jre (Java)
 CVE-2026-102554
+# ===== Exemptions temporaires — image de base distroless =====
+# Détectées le 2026-11-07 (build #28) — zlib1g 1:1.3.dfsg+really1.3.1-1+b1
+# Correctif Debian publié (deb13u1), pas encore intégré dans gcr.io/distroless/nodejs24-debian13.
+# Analyse : gz_vacate() relève de l'API fichier gzFile ; Node utilise l'API de flux
+#           (deflate/inflate) -> exploitabilité jugée faible (à confirmer, cf. VEX).
+# Mesure : docker build --pull à chaque build -> correctif récupéré dès publication.
+# Responsable : Chiheb Medini — expiration automatique sous 14 jours.
+CVE-2026-76844 exp:2026-11-21
+CVE-2026-85091 exp:2026-11-21
