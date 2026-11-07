@@ -167,4 +167,26 @@ pipeline {
       }
     }
   }
+    post {
+    failure {
+      emailext(
+        subject: "❌ [DevSecOps] juice-shop #${env.BUILD_NUMBER} BLOQUÉ",
+        body: """Le pipeline a été bloqué par un contrôle de sécurité ou une erreur.
+
+Build : ${env.BUILD_URL}
+Étapes : ${env.BUILD_URL}stages/
+Rapports : ${env.BUILD_URL}artifact/
+
+Aucun déploiement n'a eu lieu après l'étape en échec.""",
+        to: '$DEFAULT_RECIPIENTS'
+      )
+    }
+    fixed {
+      emailext(
+        subject: "✅ [DevSecOps] juice-shop #${env.BUILD_NUMBER} rétabli",
+        body: "Le pipeline est de nouveau vert : ${env.BUILD_URL}",
+        to: '$DEFAULT_RECIPIENTS'
+      )
+    }
+  }
 }
