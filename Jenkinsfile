@@ -135,16 +135,23 @@ pipeline {
     }
     stage('DAST - OWASP ZAP') {
       steps {
-        // laisse le temps à Juice Shop de démarrer
-        sh 'sleep 20'
+        sh 'sleep 20'   // démarrage de Juice Shop
         script {
           docker.image('ghcr.io/zaproxy/zaproxy:stable').inside('--network devsecops --entrypoint=""') {
             sh '''
               mkdir -p /zap/wrk
-              # -I : ne pas échouer pour l'instant (phase d'observation)
+              cp "$WORKSPACE/zap-rules.conf" /zap/wrk/
+              set +e
               zap-baseline.py -t http://juice-shop-staging:3000 -m 2 \
-                -r zap-report.html -J zap-report.json -I || true
+                -c zap-rules.conf -r zap-report.html -J zap-report.json
+              RC=$?
+              set -e
               cp /zap/wrk/zap-report.html /zap/wrk/zap-report.json "$WORKSPACE"/ || true
+              # 0 = OK, 2 = avertissements seulement (acceptés)
+              # 1 = une règle FAIL déclenchée, 3 = erreur du scan => bloquant
+              if [ "$RC" -eq 1 ] || [ "$RC" -eq 3 ]; then
+                echo "DAST : régression de sécurité détectée (code $RC)"; exit 1
+              fi
             '''
           }
         }
