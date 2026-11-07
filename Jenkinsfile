@@ -172,7 +172,7 @@ pipeline {
       post {
         always {
           archiveArtifacts artifacts: 'reports/zap-report.html,zap-report.json', allowEmptyArchive: true
-          publishHTML(target: [reportName: 'SCA - Trivy', reportDir: 'reports', reportFiles: 'trivy-sca-report.html',
+          publishHTML(target: [reportName: 'DAST - ZAP', reportDir: 'reports', reportFiles: 'zap-report.html',
                                keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
