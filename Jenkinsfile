@@ -126,11 +126,33 @@ pipeline {
       steps {
         sh '''
           docker rm -f juice-shop-staging || true
-          docker run -d --name juice-shop-staging -p 3001:3000 $IMAGE
+          docker run -d --name juice-shop-staging --network devsecops -p 3001:3000 $IMAGE
           # garder seulement les 3 dernières images juice-shop
           docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 | xargs -r -I{} docker rmi juice-shop:{} || true
           docker image prune -f
         '''
+      }
+    }
+    stage('DAST - OWASP ZAP') {
+      steps {
+        // laisse le temps à Juice Shop de démarrer
+        sh 'sleep 20'
+        script {
+          docker.image('ghcr.io/zaproxy/zaproxy:stable').inside('--network devsecops --entrypoint=""') {
+            sh '''
+              mkdir -p /zap/wrk
+              # -I : ne pas échouer pour l'instant (phase d'observation)
+              zap-baseline.py -t http://juice-shop-staging:3000 -m 2 \
+                -r zap-report.html -J zap-report.json -I || true
+              cp /zap/wrk/zap-report.html /zap/wrk/zap-report.json "$WORKSPACE"/ || true
+            '''
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'zap-report.html,zap-report.json', allowEmptyArchive: true
+        }
       }
     }
   }
