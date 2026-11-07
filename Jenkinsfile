@@ -13,7 +13,7 @@ pipeline {
       steps { 
         checkout scm
         // supprime les rapports des builds précédents (on garde les caches .sonar et .trivycache)
-        sh 'rm -f *-report.json *-report.html image.tar'
+        sh 'rm -rf reports *-report.json image.tar && mkdir -p reports'
       }
     }
     stage('Secrets scan') {
@@ -88,7 +88,7 @@ pipeline {
           # 1. Rapport complet, toutes sévérités (non bloquant, pour l'historique)
           trivy rootfs $COMMON --format json -o trivy-sca-report.json .
           trivy rootfs $COMMON --skip-db-update --skip-java-db-update \
-            --format template --template "@contrib/html.tpl" -o trivy-sca-report.html .
+            --format template --template "@/contrib/html.tpl" -o reports/trivy-sca-report.html .
           # 2. Contrôle bloquant : HIGH/CRITICAL hors baseline
           trivy rootfs $COMMON --severity HIGH,CRITICAL \
             --ignorefile .trivyignore --skip-db-update --skip-java-db-update --exit-code 1 .
@@ -97,7 +97,7 @@ pipeline {
       post {
         always {
           archiveArtifacts artifacts: 'trivy-sca-report.json', allowEmptyArchive: true
-          publishHTML(target: [reportName: 'SCA - Trivy', reportDir: '.', reportFiles: 'trivy-sca-report.html',
+          publishHTML(target: [reportName: 'SCA - Trivy', reportDir: 'reports', reportFiles: 'trivy-sca-report.html',
                                keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
@@ -117,7 +117,7 @@ pipeline {
               # 1. Rapport complet (non bloquant)
               trivy image $COMMON --format json -o trivy-image-report.json 
               trivy image $COMMON --skip-db-update --skip-java-db-update \
-                --format template --template "@contrib/html.tpl" -o trivy-image-report.html
+                --format template --template "@/contrib/html.tpl" -o reports/trivy-image-report.html
               # 2. Contrôle bloquant : HIGH/CRITICAL corrigeables, hors baseline
               trivy image $COMMON --severity HIGH,CRITICAL --ignore-unfixed \
                 --ignorefile .trivyignore --skip-db-update --skip-java-db-update --exit-code 1
@@ -129,7 +129,7 @@ pipeline {
         always {
           archiveArtifacts artifacts: 'trivy-image-report.json', allowEmptyArchive: true
           sh 'rm -f image.tar'
-          publishHTML(target: [reportName: 'Image - Trivy', reportDir: '.', reportFiles: 'trivy-image-report.html',
+          publishHTML(target: [reportName: 'Image - Trivy', reportDir: 'reports', reportFiles: 'trivy-image-report.html',
                                keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
@@ -158,7 +158,8 @@ pipeline {
                 -c zap-rules.conf -r zap-report.html -J zap-report.json
               RC=$?
               set -e
-              cp /zap/wrk/zap-report.html /zap/wrk/zap-report.json "$WORKSPACE"/ || true
+              cp /zap/wrk/zap-report.html "$WORKSPACE"/reports/ || true
+              cp /zap/wrk/zap-report.json "$WORKSPACE"/ || true
               # 0 = OK, 2 = avertissements seulement (acceptés)
               # 1 = une règle FAIL déclenchée, 3 = erreur du scan => bloquant
               if [ "$RC" -eq 1 ] || [ "$RC" -eq 3 ]; then
@@ -170,8 +171,8 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'zap-report.html,zap-report.json', allowEmptyArchive: true
-          publishHTML(target: [reportName: 'SCA - Trivy', reportDir: '.', reportFiles: 'trivy-sca-report.html',
+          archiveArtifacts artifacts: 'reports/zap-report.html,zap-report.json', allowEmptyArchive: true
+          publishHTML(target: [reportName: 'SCA - Trivy', reportDir: 'reports', reportFiles: 'trivy-sca-report.html',
                                keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
