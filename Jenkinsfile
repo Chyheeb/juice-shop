@@ -13,7 +13,7 @@ pipeline {
       steps { 
         checkout scm
         // supprime les rapports des builds précédents (on garde les caches .sonar et .trivycache)
-        sh 'rm -f gitleaks-report.json trivy-sca-report.json trivy-image-report.json zap-report.html zap-report.json image.tar'
+        sh 'rm -f *-report.json *-report.html image.tar'
       }
     }
     stage('Secrets scan') {
@@ -87,6 +87,8 @@ pipeline {
           COMMON="--scanners vuln --timeout 20m --no-progress --skip-dirs .sonar --skip-dirs .trivycache"
           # 1. Rapport complet, toutes sévérités (non bloquant, pour l'historique)
           trivy rootfs $COMMON --format json -o trivy-sca-report.json .
+          trivy rootfs $COMMON --skip-db-update --skip-java-db-update \
+            --format template --template "@contrib/html.tpl" -o trivy-sca-report.html .
           # 2. Contrôle bloquant : HIGH/CRITICAL hors baseline
           trivy rootfs $COMMON --severity HIGH,CRITICAL \
             --ignorefile .trivyignore --skip-db-update --skip-java-db-update --exit-code 1 .
@@ -95,6 +97,8 @@ pipeline {
       post {
         always {
           archiveArtifacts artifacts: 'trivy-sca-report.json', allowEmptyArchive: true
+          publishHTML(target: [reportName: 'SCA - Trivy', reportDir: '.', reportFiles: 'trivy-sca-report.html',
+                               keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
     }
@@ -111,7 +115,9 @@ pipeline {
               export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
               COMMON="--input image.tar --scanners vuln --timeout 20m --no-progress"
               # 1. Rapport complet (non bloquant)
-              trivy image $COMMON --format json -o trivy-image-report.json
+              trivy image $COMMON --format json -o trivy-image-report.json 
+              trivy image $COMMON --skip-db-update --skip-java-db-update \
+                --format template --template "@contrib/html.tpl" -o trivy-image-report.html
               # 2. Contrôle bloquant : HIGH/CRITICAL corrigeables, hors baseline
               trivy image $COMMON --severity HIGH,CRITICAL --ignore-unfixed \
                 --ignorefile .trivyignore --skip-db-update --skip-java-db-update --exit-code 1
@@ -123,6 +129,8 @@ pipeline {
         always {
           archiveArtifacts artifacts: 'trivy-image-report.json', allowEmptyArchive: true
           sh 'rm -f image.tar'
+          publishHTML(target: [reportName: 'Image - Trivy', reportDir: '.', reportFiles: 'trivy-image-report.html',
+                               keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
     }
@@ -163,6 +171,8 @@ pipeline {
       post {
         always {
           archiveArtifacts artifacts: 'zap-report.html,zap-report.json', allowEmptyArchive: true
+          publishHTML(target: [reportName: 'SCA - Trivy', reportDir: '.', reportFiles: 'trivy-sca-report.html',
+                               keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
     }
