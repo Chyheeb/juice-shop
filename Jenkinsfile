@@ -199,5 +199,16 @@ Aucun déploiement n'a eu lieu après l'étape en échec.""",
         to: '$DEFAULT_RECIPIENTS'
       )
     }
+    always {
+      sh '''
+        # garder les 3 dernières images juice-shop
+        docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 \
+          | xargs -r -I{} docker rmi juice-shop:{} || true
+        docker image prune -f || true
+        # cache de build : garder seulement les dernières 24 h
+        docker builder prune -f --filter "until=24h" || true
+        rm -f image.tar
+      '''
+    }
   }
 }
