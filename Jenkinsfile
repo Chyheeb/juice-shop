@@ -80,10 +80,11 @@ pipeline {
       steps {
         sh '''
           export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
+          COMMON="--scanners vuln --timeout 20m --no-progress --skip-dirs .sonar --skip-dirs .trivycache"
           # 1. Rapport complet, toutes sévérités (non bloquant, pour l'historique)
-          trivy rootfs --scanners vuln --format json -o trivy-sca-report.json .
+          trivy rootfs $COMMON --format json -o trivy-sca-report.json .
           # 2. Contrôle bloquant : HIGH/CRITICAL hors baseline
-          trivy rootfs --scanners vuln --severity HIGH,CRITICAL \
+          trivy rootfs $COMMON --severity HIGH,CRITICAL \
             --ignorefile .trivyignore --skip-db-update --skip-java-db-update --exit-code 1 .
         '''
       }
