@@ -77,3 +77,4 @@ cypress/screenshots/
 
 .trivycache/
 .sonar/
+image.tar

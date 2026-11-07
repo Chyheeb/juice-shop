@@ -97,6 +97,31 @@ pipeline {
     stage('Docker build') {
       steps { sh 'docker build --progress=plain -t $IMAGE .' }
     }
+    stage('Image scan - Trivy') {
+      steps {
+        // export de l'image : Trivy n'a jamais accès au socket Docker
+        sh 'docker save $IMAGE -o image.tar'
+        script {
+          docker.image('aquasec/trivy:latest').inside('--entrypoint=""') {
+            sh '''
+              export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
+              COMMON="--input image.tar --scanners vuln --timeout 20m --no-progress"
+              # 1. Rapport complet (non bloquant)
+              trivy image $COMMON --format json -o trivy-image-report.json
+              # 2. Contrôle bloquant : HIGH/CRITICAL corrigeables, hors baseline
+              trivy image $COMMON --severity HIGH,CRITICAL --ignore-unfixed \
+                --ignorefile .trivyignore --skip-db-update --skip-java-db-update --exit-code 1
+            '''
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'trivy-image-report.json', allowEmptyArchive: true
+          sh 'rm -f image.tar'
+        }
+      }
+    }
     stage('Deploy (staging)') {
       steps {
         sh '''

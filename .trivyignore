@@ -75,3 +75,9 @@ GHSA-5mrr-rgp6-x4gr
 NSWG-ECO-17
 # HIGH base64url@0.0.6
 NSWG-ECO-428
+
+# ===== Baseline image Docker (trivy image, --ignore-unfixed) — 2026-11-07 =====
+# HIGH org.apache.sshd:sshd-common@2.9.2 (Java)
+CVE-2024-41909
+# HIGH com.google.guava:guava@33.7.1-jre (Java)
+CVE-2026-102554
