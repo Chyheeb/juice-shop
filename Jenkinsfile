@@ -103,7 +103,7 @@ pipeline {
       }
     }
     stage('Docker build') {
-      steps { sh 'docker build --progress=plain -t $IMAGE .' }
+      steps { sh 'docker build --pull --progress=plain -t $IMAGE .' }
     }
     stage('Image scan - Trivy') {
       steps {
