@@ -20,5 +20,5 @@ repos:
     rev: v1.184.0
     hooks:
       - id: semgrep
-        args: ['--config', 'p/javascript', '--config', 'p/typescript',
+        args: ['--config', 'p/javascript', '--config', 'p/typescript', '--baseline-commit', 'HEAD',
                '--error', '--skip-unknown-extensions', '--metrics', 'off']
