@@ -8,6 +8,9 @@ pipeline {
     timeout(time: 60, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '10'))
   }
+  triggers {
+    pollSCM('H/5 * * * *')   // vérifie le dépôt toutes les 5 min et lance un build s'il y a un nouveau commit
+  }
   environment {
     IMAGE = "juice-shop:${BUILD_NUMBER}"
   }
