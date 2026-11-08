@@ -79,7 +79,7 @@ pipeline {
       steps {
         sh '''
           export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
-          COMMON="--skip-dirs **/node_modules --skip-dirs .sonar --skip-dirs .trivycache --timeout 10m"
+          COMMON="--skip-dirs node_modules --skip-dirs frontend/node_modules --skip-dirs data/static --skip-dirs .sonar --skip-dirs .trivycache --timeout 10m"
           # 1. Rapport complet (non bloquant)
           trivy config $COMMON --format json -o trivy-iac-report.json .
           trivy config $COMMON --format template --template "@/contrib/html.tpl" -o reports/trivy-iac-report.html .
@@ -250,8 +250,3 @@ Aucun déploiement n'a eu lieu après l'étape en échec.""",
     }
   }
 }
-
-
-
-
-

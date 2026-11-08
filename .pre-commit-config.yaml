@@ -3,7 +3,7 @@
 repos:
   # Détection de secrets (tokens, clés API, mots de passe)
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
+    rev: v8.21.2
     hooks:
       - id: gitleaks
 
