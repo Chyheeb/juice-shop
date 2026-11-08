@@ -68,6 +68,33 @@ pipeline {
         }
       }
     }
+    stage('IaC scan - Trivy') {
+      agent {
+        docker {
+          image 'aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb'
+          args '--entrypoint=""'
+          reuseNode true
+        }
+      }
+      steps {
+        sh '''
+          export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
+          COMMON="--skip-dirs **/node_modules --skip-dirs .sonar --skip-dirs .trivycache --timeout 10m"
+          # 1. Rapport complet (non bloquant)
+          trivy config $COMMON --format json -o trivy-iac-report.json .
+          trivy config $COMMON --format template --template "@/contrib/html.tpl" -o reports/trivy-iac-report.html .
+          # 2. Contrôle bloquant : mauvaise configuration HIGH/CRITICAL hors baseline
+          trivy config $COMMON --severity HIGH,CRITICAL --ignorefile .trivyignore-iac.yaml --exit-code 1 .
+        '''
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'trivy-iac-report.json', allowEmptyArchive: true
+          publishHTML(target: [reportName: 'IaC - Trivy', reportDir: 'reports', reportFiles: 'trivy-iac-report.html',
+                               keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
+        }
+      }
+    }
     stage('Build & Unit tests') {
       agent { docker { image 'node@sha256:e273cf2a19c7334c03f52e2ca933ecdfc3fbfaad49db7b8bc8c3edd9ac34e9c7'; reuseNode true } }
       steps {

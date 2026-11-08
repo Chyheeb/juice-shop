@@ -1,0 +1,18 @@
+# ===== Exemptions IaC (trivy config) — 2026-11-08 — Chiheb Medini =====
+# Chaque exemption est limitée aux fichiers listés : la même erreur ailleurs reste bloquante.
+misconfigurations:
+  - id: AWS-0053
+    paths: ["terraform/networking.tf", "infrastructure/terraform/networking.tf"]
+    statement: "Load balancer public par conception (boutique web exposée sur Internet). Risque accepté."
+  - id: AWS-0054
+    paths: ["terraform/networking.tf", "infrastructure/terraform/networking.tf"]
+    statement: "HTTPS nécessite un certificat ACM et un domaine absents du lab. Plan : listener 443 + redirection 80->443."
+    expired_at: 2026-12-08
+  - id: AWS-0104
+    paths: ["terraform/networking.tf", "infrastructure/terraform/networking.tf"]
+    statement: "Egress requis par ECS (pull d'images). Plan : VPC endpoints ECR/S3 et egress restreint."
+    expired_at: 2026-12-08
+  - id: AWS-0164
+    paths: ["terraform/networking.tf", "infrastructure/terraform/networking.tf"]
+    statement: "IP publique sur les sous-réseaux du load balancer. Plan : tâches ECS en sous-réseaux privés derrière NAT."
+    expired_at: 2026-12-08
