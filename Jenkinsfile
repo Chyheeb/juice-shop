@@ -81,8 +81,8 @@ pipeline {
           export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
           COMMON="--skip-dirs node_modules --skip-dirs frontend/node_modules --skip-dirs data/static --skip-dirs .sonar --skip-dirs .trivycache --timeout 10m"
           # 1. Rapport complet (non bloquant)
-          trivy config $COMMON --format json -o trivy-iac-report.json .
-          trivy config $COMMON --format template --template "@/contrib/html.tpl" -o reports/trivy-iac-report.html .
+          trivy config $COMMON --ignorefile /dev/null --format json -o trivy-iac-report.json .
+          trivy config $COMMON --ignorefile /dev/null --format template --template "@/contrib/html.tpl" -o reports/trivy-iac-report.html .
           # 2. Contrôle bloquant : mauvaise configuration HIGH/CRITICAL hors baseline
           trivy config $COMMON --severity HIGH,CRITICAL --ignorefile .trivyignore-iac.yaml --exit-code 1 .
         '''
@@ -124,8 +124,8 @@ pipeline {
           export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
           COMMON="--scanners vuln --timeout 20m --no-progress --skip-dirs .sonar --skip-dirs .trivycache"
           # 1. Rapport complet, toutes sévérités (non bloquant, pour l'historique)
-          trivy rootfs $COMMON --format json -o trivy-sca-report.json .
-          trivy rootfs $COMMON --skip-db-update --skip-java-db-update \
+          trivy rootfs $COMMON --ignorefile /dev/null --format json -o trivy-sca-report.json .
+          trivy rootfs $COMMON --ignorefile /dev/null --skip-db-update --skip-java-db-update \
             --format template --template "@/contrib/html.tpl" -o reports/trivy-sca-report.html .
           # 2. Contrôle bloquant : HIGH/CRITICAL hors baseline
           trivy rootfs $COMMON --severity HIGH,CRITICAL \
@@ -153,8 +153,8 @@ pipeline {
               export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
               COMMON="--input image.tar --scanners vuln --timeout 20m --no-progress"
               # 1. Rapport complet (non bloquant)
-              trivy image $COMMON --format json -o trivy-image-report.json 
-              trivy image $COMMON --skip-db-update --skip-java-db-update \
+              trivy image $COMMON --ignorefile /dev/null --format json -o trivy-image-report.json 
+              trivy image $COMMON --ignorefile /dev/null --skip-db-update --skip-java-db-update \
                 --format template --template "@/contrib/html.tpl" -o reports/trivy-image-report.html
               # 2. Contrôle bloquant : HIGH/CRITICAL corrigeables, hors baseline
               trivy image $COMMON --severity HIGH,CRITICAL --ignore-unfixed \
