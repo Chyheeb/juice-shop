@@ -238,6 +238,12 @@ Aucun déploiement n'a eu lieu après l'étape en échec.""",
       )
     }
     always {
+      script {
+        // Pousse les compteurs de sécurité vers Prometheus ; une panne du monitoring ne casse jamais le build
+        docker.image('python:3.12-alpine').inside('--network devsecops') {
+          sh "BUILD_RESULT=${currentBuild.currentResult} BUILD_NO=${env.BUILD_NUMBER} python3 ci/push_metrics.py || true"
+        }
+      }
       sh '''
         # garder les 3 dernières images juice-shop
         docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 \
