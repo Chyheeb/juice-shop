@@ -64,7 +64,11 @@ pipeline {
       steps {
         timeout(time: 10, unit: 'MINUTES') {
           // attend le verdict de SonarQube (via le webhook) et bloque si ERROR
-          waitForQualityGate abortPipeline: true
+          script {
+             def qg = waitForQualityGate()
+             writeFile file: 'reports/sonar-quality-gate.txt', text: "Quality Gate : ${qg.status}\n"
+             if (qg.status != 'OK') { error "Quality Gate ${qg.status}" }
+          }
         }
       }
     }
@@ -103,7 +107,10 @@ pipeline {
         sh 'cd frontend && npm install --no-audit --no-fund --legacy-peer-deps'
         sh 'npm run build:frontend'
         sh 'npm run build:server'
-        sh 'npm run test:server'
+        sh '''#!/bin/bash -e
+             set -o pipefail
+             npm run test:server 2>&1 | tee reports/build-test.log
+        '''
       }
       post {
         always {
@@ -141,7 +148,12 @@ pipeline {
       }
     }
     stage('Docker build') {
-      steps { sh 'docker build --pull --progress=plain -t $IMAGE .' }
+      steps {
+         sh '''#!/bin/bash -e
+             set -o pipefail
+             docker build --pull --progress=plain -t $IMAGE . 2>&1 | tee reports/docker-build.log
+         '''
+      }
     }
     stage('Image scan - Trivy') {
       steps {
@@ -180,6 +192,8 @@ pipeline {
           # garder seulement les 3 dernières images juice-shop
           docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 | xargs -r -I{} docker rmi juice-shop:{} || true
           docker image prune -f
+          docker ps --filter name=juice-shop-staging > reports/deploy.log
+          docker inspect --format 'Image déployée : {{.Config.Image}}' juice-shop-staging >> reports/deploy.log
         '''
       }
     }
@@ -216,43 +230,32 @@ pipeline {
       }
     }
   }
-    post {
-    failure {
-      emailext(
-        subject: "❌ [DevSecOps] juice-shop #${env.BUILD_NUMBER} BLOQUÉ",
-        body: """Le pipeline a été bloqué par un contrôle de sécurité ou une erreur.
-
-Build : ${env.BUILD_URL}
-Étapes : ${env.BUILD_URL}stages/
-Rapports : ${env.BUILD_URL}artifact/
-
-Aucun déploiement n'a eu lieu après l'étape en échec.""",
-        to: '$DEFAULT_RECIPIENTS'
-      )
-    }
-    fixed {
-      emailext(
-        subject: "✅ [DevSecOps] juice-shop #${env.BUILD_NUMBER} rétabli",
-        body: "Le pipeline est de nouveau vert : ${env.BUILD_URL}",
-        to: '$DEFAULT_RECIPIENTS'
-      )
-    }
-    always {
-      script {
-        // Pousse les compteurs de sécurité vers Prometheus ; une panne du monitoring ne casse jamais le build
-        docker.image('python:3.12-alpine').inside('--network devsecops') {
-          sh "BUILD_RESULT=${currentBuild.currentResult} BUILD_NO=${env.BUILD_NUMBER} python3 ci/push_metrics.py || true"
-        }
+  post {
+   always {
+    script {
+      docker.image('python:3.12-alpine').inside('--network devsecops') {
+        sh "BUILD_RESULT=${currentBuild.currentResult} BUILD_NO=${env.BUILD_NUMBER} python3 ci/push_metrics.py || true"
+        sh "BUILD_RESULT=${currentBuild.currentResult} python3 ci/build_report.py || true"
       }
-      sh '''
-        # garder les 3 dernières images juice-shop
-        docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 \
-          | xargs -r -I{} docker rmi juice-shop:{} || true
-        docker image prune -f || true
-        # cache de build : garder seulement les dernières 24 h
-        docker builder prune -f --filter "until=24h" || true
-        rm -f image.tar
-      '''
+      archiveArtifacts artifacts: 'reports/pipeline-report.html', allowEmptyArchive: true
+      def status = currentBuild.currentResult
+      def icon = (status == 'SUCCESS') ? '✅' : '❌'
+      emailext(
+        subject: "${icon} [DevSecOps] juice-shop #${env.BUILD_NUMBER} - ${status}",
+        mimeType: 'text/html',
+        body: fileExists('reports/pipeline-report.html')
+              ? readFile('reports/pipeline-report.html')
+              : "Rapport non généré. Build : ${env.BUILD_URL}",
+        attachmentsPattern: 'reports/pipeline-report.html,gitleaks-report.json,trivy-*-report.json,zap-report.json,reports/*.log,reports/sonar-quality-gate.txt,frontend/dist/bom/bom.json',
+        to: '$DEFAULT_RECIPIENTS'
+      )
     }
+    sh '''
+      docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 \
+        | xargs -r -I{} docker rmi juice-shop:{} || true
+      docker image prune -f || true
+      docker builder prune -f --filter "until=24h" || true
+      rm -f image.tar
+   } '''
   }
 }
