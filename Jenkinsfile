@@ -10,7 +10,7 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '10'))
   }
   triggers {
-    pollSCM('H/* * * * *')   // vérifie le dépôt toutes les 5 min et lance un build s'il y a un nouveau commit
+    pollSCM('* * * * *')   // vérifie le dépôt toutes les 5 min et lance un build s'il y a un nouveau commit
   }
   environment {
     IMAGE = "juice-shop:${BUILD_NUMBER}"
@@ -257,6 +257,7 @@ pipeline {
       docker image prune -f || true
       docker builder prune -f --filter "until=24h" || true
       rm -f image.tar
-   } '''
+     '''
+    }
   }
 }
