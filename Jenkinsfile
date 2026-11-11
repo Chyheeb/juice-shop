@@ -3,13 +3,14 @@ pipeline {
   // Mise à jour volontaire et contrôlée (en entreprise : Renovate/Dependabot).
   // Exception : l'image de base de l'application est récupérée avec --pull pour intégrer les correctifs OS.
   agent any
-  options { 
+  options {
+    quietPeriod(0) 
     disableConcurrentBuilds()
     timeout(time: 60, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '10'))
   }
   triggers {
-    pollSCM('H/5 * * * *')   // vérifie le dépôt toutes les 5 min et lance un build s'il y a un nouveau commit
+    pollSCM('H/* * * * *')   // vérifie le dépôt toutes les 5 min et lance un build s'il y a un nouveau commit
   }
   environment {
     IMAGE = "juice-shop:${BUILD_NUMBER}"
