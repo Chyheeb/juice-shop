@@ -6,9 +6,12 @@ Une section par stage, dans l'ordre du pipeline : chemin du rapport, résumé
 ou « Rapport non généré » si le stage a échoué ou a été sauté.
 Bibliothèque standard uniquement (tourne dans python:3.12-alpine).
 """
+import base64
 import html
 import json
 import os
+import urllib.parse
+import urllib.request
 from collections import Counter
 
 BUILD_NO = os.environ.get("BUILD_NUMBER", "?")
@@ -18,6 +21,10 @@ RESULT = os.environ.get("BUILD_RESULT", "UNKNOWN")
 OUT = "reports/pipeline-report.html"
 SEV_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]
 MAX_ROWS = 15
+# SonarQube : URL interne (réseau Docker) pour l'API, URL publique pour les liens de l'e-mail
+SONAR_API = os.environ.get("SONAR_HOST_URL", "http://sonarqube:9000").rstrip("/")
+SONAR_PUBLIC = os.environ.get("SONAR_PUBLIC_URL", "http://localhost:9000").rstrip("/")
+SONAR_TOKEN = os.environ.get("SONAR_AUTH_TOKEN", "")
 
 
 def esc(s):
@@ -56,6 +63,8 @@ def sort_sev(rows, idx=0):
     return sorted(rows, key=lambda r: SEV_ORDER.index(r[idx]) if r[idx] in SEV_ORDER else 9)
 
 
+# ---------- résumés par outil ----------
+
 def gitleaks(path):
     data = load_json(path)
     if data is None:
@@ -67,16 +76,82 @@ def gitleaks(path):
     return out
 
 
+def sonar_get(endpoint, params):
+    """Appel GET à l'API SonarQube ; None en cas d'erreur (le rapport ne doit jamais casser)."""
+    url = f"{SONAR_API}{endpoint}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url)
+    if SONAR_TOKEN:
+        auth = base64.b64encode(f"{SONAR_TOKEN}:".encode()).decode()
+        req.add_header("Authorization", f"Basic {auth}")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.load(r)
+    except Exception as e:  # noqa: BLE001
+        print(f"API SonarQube indisponible ({endpoint}) : {e}")
+        return None
+
+
+def sonar_project_key():
+    rt = tail(".scannerwork/report-task.txt", 50) or ""
+    for line in rt.splitlines():
+        if line.startswith("projectKey="):
+            return line.split("=", 1)[1].strip()
+    return None
+
+
+def issue_severity(i):
+    for imp in i.get("impacts") or []:
+        if imp.get("softwareQuality") == "SECURITY":
+            return imp.get("severity", "")
+    return i.get("severity", "")
+
+
 def sonar(path):
     txt = tail(path)
     if txt is None:
         return None
     out = f"<p><b>{esc(txt.strip())}</b></p>"
-    rt = tail(".scannerwork/report-task.txt", 20) or ""
-    for line in rt.splitlines():
-        if line.startswith("dashboardUrl="):
-            url = line.split("=", 1)[1]
-            out += f'<p><a href="{esc(url)}">Tableau de bord SonarQube</a></p>'
+    key = sonar_project_key()
+    if not key:
+        return out
+    q = urllib.parse.quote(key)
+    dash = f"{SONAR_PUBLIC}/dashboard?id={q}"
+    vulns_url = f"{SONAR_PUBLIC}/project/issues?id={q}&impactSoftwareQualities=SECURITY&resolved=false"
+    hot_url = f"{SONAR_PUBLIC}/security_hotspots?id={q}"
+    out += (f'<p><a href="{esc(dash)}">Tableau de bord SonarQube</a> · '
+            f'<a href="{esc(vulns_url)}">Vulnérabilités</a> · '
+            f'<a href="{esc(hot_url)}">Security hotspots</a></p>')
+
+    m = sonar_get("/api/measures/component", {"component": key,
+                  "metricKeys": "vulnerabilities,security_hotspots,bugs,code_smells,security_rating"})
+    if m and m.get("component"):
+        vals = {x["metric"]: x.get("value", "—") for x in m["component"].get("measures", [])}
+        rating = {"1.0": "A", "2.0": "B", "3.0": "C", "4.0": "D", "5.0": "E"}
+        out += table(["Vulnérabilités", "Security hotspots", "Bugs", "Code smells", "Note sécurité"],
+                     [(vals.get("vulnerabilities", "—"), vals.get("security_hotspots", "—"),
+                       vals.get("bugs", "—"), vals.get("code_smells", "—"),
+                       rating.get(vals.get("security_rating", ""), vals.get("security_rating", "—")))])
+
+    iss = sonar_get("/api/issues/search", {"componentKeys": key, "impactSoftwareQualities": "SECURITY",
+                                           "resolved": "false", "ps": MAX_ROWS})
+    if iss is not None:
+        rows = []
+        for i in iss.get("issues", []):
+            comp = i.get("component", "").split(":", 1)[-1]
+            rows.append((issue_severity(i), i.get("rule"), comp, i.get("line", "—"), i.get("message")))
+        out += f"<p><b>Problèmes de sécurité ouverts : {iss.get('total', len(rows))}</b></p>"
+        if rows:
+            out += table(["Sévérité", "Règle", "Fichier", "Ligne", "Message"], rows)
+
+    hs = sonar_get("/api/hotspots/search", {"projectKey": key, "status": "TO_REVIEW", "ps": MAX_ROWS})
+    if hs is not None:
+        rows = [(h.get("vulnerabilityProbability"), h.get("securityCategory"),
+                 h.get("component", "").split(":", 1)[-1], h.get("line", "—"), h.get("message"))
+                for h in hs.get("hotspots", [])]
+        total = (hs.get("paging") or {}).get("total", len(rows))
+        out += f"<p><b>Security hotspots à revoir : {total}</b></p>"
+        if rows:
+            out += table(["Probabilité", "Catégorie", "Fichier", "Ligne", "Message"], rows)
     return out
 
 
@@ -147,6 +222,8 @@ def sbom(path):
     return f"<p><b>SBOM CycloneDX : {n} composants</b></p>"
 
 
+# ---------- assemblage ----------
+
 STAGES = [
     ("Secrets scan — Gitleaks", "gitleaks-report.json", lambda p: gitleaks(p)),
     ("SAST — SonarQube / Quality Gate", "reports/sonar-quality-gate.txt", lambda p: sonar(p)),
@@ -156,8 +233,8 @@ STAGES = [
     ("SCA — Trivy (dépendances)", "trivy-sca-report.json", lambda p: trivy_vuln(p, "Vulnérabilités")),
     ("Docker build", "reports/docker-build.log", lambda p: logfile(p, 25)),
     ("Image scan — Trivy", "trivy-image-report.json", lambda p: trivy_vuln(p, "Vulnérabilités de l'image")),
-    ("Deploy (staging)", "reports/deploy.log", lambda p: logfile(p, 15)),
     ("DAST — OWASP ZAP", "zap-report.json", lambda p: zap(p)),
+    ("Deploy (staging)", "reports/deploy.log", lambda p: logfile(p, 15)),
 ]
 
 color = "#1a7f37" if RESULT == "SUCCESS" else "#c62828"
@@ -191,4 +268,3 @@ os.makedirs("reports", exist_ok=True)
 with open(OUT, "w", encoding="utf-8") as f:
     f.write("\n".join(parts))
 print(f"Rapport écrit : {OUT}")
-

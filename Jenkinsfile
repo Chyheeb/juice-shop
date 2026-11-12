@@ -4,20 +4,21 @@ pipeline {
   // Exception : l'image de base de l'application est récupérée avec --pull pour intégrer les correctifs OS.
   agent any
   options {
-    quietPeriod(0) 
+    quietPeriod(0)   // démarre dès que le commit est détecté
     disableConcurrentBuilds()
     timeout(time: 60, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '10'))
   }
   triggers {
-    pollSCM('* * * * *')   // vérifie le dépôt toutes les 5 min et lance un build s'il y a un nouveau commit
+    githubPush()   // build immédiat : webhook GitHub -> ngrok -> Jenkins (/github-webhook/)
   }
   environment {
     IMAGE = "juice-shop:${BUILD_NUMBER}"
+    SONAR_PUBLIC_URL = 'http://localhost:9000'   // adresse de SonarQube utilisée dans les liens de l'e-mail
   }
   stages {
     stage('Checkout') {
-      steps { 
+      steps {
         checkout scm
         // supprime les rapports des builds précédents (on garde les caches .sonar et .trivycache)
         sh 'rm -rf reports *-report.json image.tar && mkdir -p reports'
@@ -166,7 +167,7 @@ pipeline {
               export TRIVY_CACHE_DIR="$WORKSPACE/.trivycache"
               COMMON="--input image.tar --scanners vuln --timeout 20m --no-progress"
               # 1. Rapport complet (non bloquant)
-              trivy image $COMMON --ignorefile /dev/null --format json -o trivy-image-report.json 
+              trivy image $COMMON --ignorefile /dev/null --format json -o trivy-image-report.json
               trivy image $COMMON --ignorefile /dev/null --skip-db-update --skip-java-db-update \
                 --format template --template "@/contrib/html.tpl" -o reports/trivy-image-report.html
               # 2. Contrôle bloquant : HIGH/CRITICAL corrigeables, hors baseline
@@ -185,29 +186,21 @@ pipeline {
         }
       }
     }
-    stage('Deploy (staging)') {
-      steps {
-        sh '''
-          docker rm -f juice-shop-staging || true
-          docker run -d --name juice-shop-staging --network devsecops -p 3001:3000 $IMAGE
-          # garder seulement les 3 dernières images juice-shop
-          docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 | xargs -r -I{} docker rmi juice-shop:{} || true
-          docker image prune -f
-          docker ps --filter name=juice-shop-staging > reports/deploy.log
-          docker inspect --format 'Image déployée : {{.Config.Image}}' juice-shop-staging >> reports/deploy.log
-        '''
-      }
-    }
     stage('DAST - OWASP ZAP') {
       steps {
-        sh 'sleep 20'   // démarrage de Juice Shop
+        // conteneur de test éphémère : ZAP attaque l'image AVANT tout déploiement
+        sh '''
+          docker rm -f juice-shop-dast || true
+          docker run -d --name juice-shop-dast --network devsecops $IMAGE
+          sleep 20   # démarrage de Juice Shop
+        '''
         script {
           docker.image('ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af').inside('--network devsecops --entrypoint=""') {
             sh '''
               mkdir -p /zap/wrk
               cp "$WORKSPACE/zap-rules.conf" /zap/wrk/
               set +e
-              zap-baseline.py -t http://juice-shop-staging:3000 -m 2 \
+              zap-baseline.py -t http://juice-shop-dast:3000 -m 2 \
                 -c zap-rules.conf -r zap-report.html -J zap-report.json
               RC=$?
               set -e
@@ -224,21 +217,41 @@ pipeline {
       }
       post {
         always {
+          sh 'docker rm -f juice-shop-dast || true'   // le conteneur de test est toujours supprimé
           archiveArtifacts artifacts: 'reports/zap-report.html,zap-report.json', allowEmptyArchive: true
           publishHTML(target: [reportName: 'DAST - ZAP', reportDir: 'reports', reportFiles: 'zap-report.html',
                                keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true])
         }
       }
     }
+    stage('Deploy (staging)') {
+      // dernière étape : n'est atteinte que si TOUS les contrôles (dont le DAST) sont verts
+      steps {
+        sh '''
+          docker rm -f juice-shop-staging || true
+          docker run -d --name juice-shop-staging --network devsecops -p 3001:3000 $IMAGE
+          # garder seulement les 3 dernières images juice-shop
+          docker images juice-shop --format "{{.Tag}}" | grep -E "^[0-9]+$" | sort -n | head -n -3 | xargs -r -I{} docker rmi juice-shop:{} || true
+          docker image prune -f
+          docker ps --filter name=juice-shop-staging > reports/deploy.log
+          docker inspect --format 'Image déployée : {{.Config.Image}}' juice-shop-staging >> reports/deploy.log
+        '''
+      }
+    }
   }
   post {
    always {
     script {
-      docker.image('python:3.12-alpine').inside('--network devsecops') {
-        sh "BUILD_RESULT=${currentBuild.currentResult} BUILD_NO=${env.BUILD_NUMBER} python3 ci/push_metrics.py || true"
-        sh "BUILD_RESULT=${currentBuild.currentResult} python3 ci/build_report.py || true"
+      // métriques Grafana + rapport HTML de synthèse (une panne ne casse jamais le build)
+      // withSonarQubeEnv fournit SONAR_HOST_URL et le token (masqué) pour lire les vulnérabilités via l'API
+      withSonarQubeEnv('SonarQube') {
+        docker.image('python:3.12-alpine').inside('--network devsecops') {
+          sh "BUILD_RESULT=${currentBuild.currentResult} BUILD_NO=${env.BUILD_NUMBER} python3 ci/push_metrics.py || true"
+          sh "BUILD_RESULT=${currentBuild.currentResult} python3 ci/build_report.py || true"
+        }
       }
       archiveArtifacts artifacts: 'reports/pipeline-report.html', allowEmptyArchive: true
+      // un e-mail à chaque build : rapport par stage dans le corps, rapports bruts en pièces jointes
       def status = currentBuild.currentResult
       def icon = (status == 'SUCCESS') ? '✅' : '❌'
       emailext(
@@ -256,8 +269,10 @@ pipeline {
         | xargs -r -I{} docker rmi juice-shop:{} || true
       docker image prune -f || true
       docker builder prune -f --filter "until=24h" || true
+      docker rm -f juice-shop-dast || true
       rm -f image.tar
-     '''
-    }
+    '''
+   }
   }
 }
+ 
